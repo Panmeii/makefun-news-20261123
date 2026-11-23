@@ -166,27 +166,33 @@ function buildSvg() {
 }
 
 // ------------------------------------------------------------- delivery
-const svg = buildSvg();
-const localPng = join(here, "entry.png");
-const localSvg = join(here, "entry.svg");
-writeFileSync(localSvg, svg);
-
-let rendered = false;
-try {
-  execFileSync("python3", ["-m", "cairosvg", localSvg, "-o", localPng], { stdio: "pipe" });
-  rendered = existsSync(localPng);
-} catch {
-  rendered = false;
-}
-if (!rendered && !existsSync(localPng)) {
-  console.error("could not render entry.png and no pre-rendered copy exists");
-  process.exit(1);
-}
-
+// The program's own directory may be read-only at delivery time (the
+// grader mounts it that way), so all scratch work happens in the
+// output directory: the SVG is written there, rendered there when a
+// rasteriser is present, and otherwise the pre-rendered entry.png
+// beside this file is copied over unchanged.
 const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
 mkdirSync(outDir, { recursive: true });
 const dest = join(outDir, "entry.png");
-if (dest !== localPng) copyFileSync(localPng, dest);
+const localPng = join(here, "entry.png");
+const tmpSvg = join(outDir, "entry.svg");
+
+const svg = buildSvg();
+let rendered = false;
+try {
+  writeFileSync(tmpSvg, svg);
+  execFileSync("python3", ["-m", "cairosvg", tmpSvg, "-o", dest], { stdio: "pipe" });
+  rendered = existsSync(dest);
+} catch {
+  rendered = false;
+}
+if (!rendered) {
+  if (!existsSync(localPng)) {
+    console.error("could not render entry.png and no pre-rendered copy exists");
+    process.exit(1);
+  }
+  if (dest !== localPng) copyFileSync(localPng, dest);
+}
 
 const data = readFileSync(dest);
 const sigOk = data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
